@@ -2,7 +2,13 @@
 
 A Python tool that takes any MRI RF pulse and compresses it to minimum duration using **Variable-Rate Selective Excitation (VERSE)**.
 
-The idea: at every moment in the compressed pulse, at least one hardware safety constraint (RF amplitude, gradient amplitude, or gradient slew rate) is at its limit. This guarantees the shortest possible pulse that maintains the same excitation profile.
+## The principle
+
+In MRI, a selective RF pulse is played together with a gradient to excite a specific slab of tissue. The excitation profile (which tissue gets excited, and by how much) depends on the *integral* of the RF waveform over time. This means you can make the pulse shorter — as long as you scale up the RF amplitude and gradient to compensate, the excitation profile stays the same.
+
+The tradeoff: compressing the pulse increases the RF amplitude, the gradient strength, and how fast the gradient changes (slew rate). All three have hardware safety limits. So the question becomes: **how short can we make the pulse before we hit a limit?**
+
+The VERSE approach: compress the pulse non-uniformly. At moments where the RF is weak (e.g., zero-crossings of a sinc), there's room to compress aggressively. At the peaks, the RF amplitude is already high, so less compression is possible. The optimal pulse hits at least one safety limit at every moment in time.
 
 ![Before and after VERSE compression](examples/comparison_before_after.png)
 
@@ -28,7 +34,7 @@ The gradient naturally ramps up from zero and back down -- no separate ramp hand
 
 *Final VERSE pulse with all three constraints shown. The slew rate stays within limits throughout.*
 
-See [20260227 VERSE Outline.md](20260227%20VERSE%20Outline.md) for a detailed walkthrough of the algorithm and the math behind each step.
+See [20260329 VERSE Outline.md](20260329%20VERSE%20Outline.md) for a detailed walkthrough of the algorithm and the math behind each step.
 
 ## Quick start
 
