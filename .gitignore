@@ -1,0 +1,20 @@
+# Claude Code local config
+.claude/
+
+# Binary/proprietary files
+*.docx
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated output (users should generate their own)
+verse_pulse_output.txt
+
+# Diagnostic plots in root (development only; examples/ has the curated ones)
+/step1_*.png
+/step2_*.png
+/step3_*.png
+/step5_*.png
+/comparison_before_after.png
