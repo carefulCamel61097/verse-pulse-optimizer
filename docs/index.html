@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VERSE Pulse Optimizer — Compress MRI RF Pulses Online</title>
+    <meta name="description" content="Upload an MRI RF pulse waveform and compress it to minimum duration using VERSE (Variable-Rate Selective Excitation). Runs entirely in your browser — no server, no install.">
+    <meta name="keywords" content="VERSE, MRI, RF pulse, pulse design, selective excitation, gradient optimization, Hargreaves, magnetic resonance imaging">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="VERSE Pulse Optimizer — Compress MRI RF Pulses Online">
+    <meta property="og:description" content="Upload an MRI RF pulse and compress it to minimum duration using VERSE. Runs in your browser via Python/NumPy in WebAssembly.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://carefulcamel61097.github.io/verse-pulse-optimizer/og-image.png">
+
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #1a1a2e;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.3rem;
+        }
+        h1 a { color: inherit; text-decoration: none; }
+        h1 a:hover { text-decoration: underline; }
+        .subtitle {
+            color: #555;
+            margin-bottom: 2rem;
+            font-size: 1.05rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 1.15rem;
+            margin-bottom: 1rem;
+            color: #16213e;
+        }
+
+        /* Hardware limits grid */
+        .limits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .limit-field label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #333;
+        }
+        .limit-field input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        .limit-field .unit {
+            font-size: 0.8rem;
+            color: #777;
+        }
+
+        /* Upload area */
+        .upload-area {
+            border: 2px dashed #bbb;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            margin-bottom: 1rem;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4361ee;
+            background: #f0f4ff;
+        }
+        .upload-area p { margin: 0.3rem 0; }
+        .upload-area .big { font-size: 1.1rem; font-weight: 600; }
+        .upload-area .small { font-size: 0.85rem; color: #777; }
+
+        /* Demo button */
+        .demo-row {
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-primary {
+            background: #4361ee;
+            color: #fff;
+        }
+        .btn-primary:hover { background: #3a56d4; }
+        .btn-secondary {
+            background: #e8ecf1;
+            color: #333;
+        }
+        .btn-secondary:hover { background: #dde1e8; }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Status / loading */
+        #status {
+            text-align: center;
+            padding: 0.8rem;
+            font-weight: 600;
+            min-height: 2.5rem;
+        }
+        .status-loading { color: #e07c24; }
+        .status-ready { color: #2d9c4a; }
+        .status-error { color: #c0392b; }
+
+        /* Results */
+        #results { display: none; }
+        .result-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .stat {
+            text-align: center;
+            padding: 0.8rem;
+            background: #f0f4ff;
+            border-radius: 8px;
+        }
+        .stat .value { font-size: 1.6rem; font-weight: 700; color: #4361ee; }
+        .stat .label { font-size: 0.8rem; color: #555; }
+        .plot-container { margin-bottom: 1rem; }
+        .download-row { text-align: center; margin-top: 1rem; }
+
+        /* Format info */
+        .format-info { font-size: 0.9rem; color: #444; }
+        .format-info code {
+            background: #eef1f6;
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.85rem;
+        }
+        .format-info pre {
+            background: #1a1a2e;
+            color: #e8ecf1;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        details { margin-top: 0.5rem; }
+        details summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #4361ee;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        footer a { color: #4361ee; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1><a href="https://github.com/carefulCamel61097/verse-pulse-optimizer">VERSE Pulse Optimizer</a></h1>
+    <p class="subtitle">Compress any MRI RF pulse to minimum duration using Variable-Rate Selective Excitation.
+        Runs entirely in your browser &mdash; no server, no install.</p>
+
+    <!-- Hardware limits -->
+    <div class="card">
+        <h2>Hardware limits</h2>
+        <div class="limits-grid">
+            <div class="limit-field">
+                <label>B1 max <span class="unit">(&mu;T)</span></label>
+                <input type="number" id="b1max" value="15" step="0.1" min="0.1">
+            </div>
+            <div class="limit-field">
+                <label>G max <span class="unit">(mT/m)</span></label>
+                <input type="number" id="gmax" value="40" step="1" min="0.1">
+            </div>
+            <div class="limit-field">
+                <label>Slew max <span class="unit">(T/m/s)</span></label>
+                <input type="number" id="smax" value="150" step="1" min="1">
+            </div>
+        </div>
+    </div>
+
+    <!-- Try the example -->
+    <div class="card">
+        <h2>Try it</h2>
+        <p style="margin-bottom:0.8rem;">See VERSE in action on a built-in example pulse &mdash; a Hamming-windowed sinc (TB=10, 60&deg; flip, 2.9&nbsp;ms) compressed to ~0.72&nbsp;ms:</p>
+        <div style="text-align:center; margin-bottom:1.2rem;">
+            <button class="btn btn-primary" id="demobtn" style="font-size:1.05rem; padding:0.7rem 2rem;">Run example pulse</button>
+        </div>
+        <hr style="border:none; border-top:1px solid #e8ecf1; margin-bottom:1rem;">
+        <h2 style="margin-top:0;">Upload your own RF pulse</h2>
+        <div class="upload-area" id="dropzone">
+            <p class="big">Drop a text file here, or click to browse</p>
+            <p class="small">Tab- or space-separated columns. See format details below.</p>
+        </div>
+        <input type="file" id="fileinput" accept=".txt,.tsv,.csv,.dat,.pta" style="display:none">
+
+        <!-- Format explanation -->
+        <details>
+            <summary>Input file format</summary>
+            <div class="format-info" style="margin-top:0.8rem;">
+                <p>The file should be a plain text file with <strong>tab- or space-separated columns</strong>. Lines starting with <code>#</code> are treated as comments and skipped. Empty lines are skipped.</p>
+
+                <p style="margin-top:0.6rem;"><strong>Required columns:</strong></p>
+                <ul style="margin: 0.3rem 0 0.8rem 1.5rem;">
+                    <li><strong>B1 amplitude</strong> in &mu;T &mdash; the RF waveform (can be negative for phase reversals)</li>
+                    <li><strong>Gradient amplitude</strong> in mT/m &mdash; typically a constant value</li>
+                </ul>
+
+                <p><strong>Supported formats (auto-detected):</strong></p>
+
+                <p style="margin-top:0.5rem;"><em>3 columns &mdash; time, B1, gradient:</em></p>
+<pre>
+# time_us    B1_uT     G_mTm
+0.000000     0.012     20.30
+4.000000     0.048     20.30
+8.000000     0.107     20.30</pre>
+
+                <p style="margin-top:0.5rem;"><em>2 columns &mdash; B1, gradient (sample interval assumed 4&nbsp;&mu;s):</em></p>
+<pre>
+0.012     20.30
+0.048     20.30
+0.107     20.30</pre>
+
+                <p style="margin-top:0.5rem;"><em>1 column &mdash; B1 only (gradient taken from first sample or constant, sample interval 4&nbsp;&mu;s):</em></p>
+<pre>
+0.012
+0.048
+0.107</pre>
+
+                <p style="margin-top:0.8rem;">The output file from this tool (and from the Python script) can be directly re-uploaded. This is the same tab-separated format used by many MRI research tools.</p>
+
+                <p style="margin-top:0.5rem;">There is no single universal standard for RF pulse files. Vendor-specific formats (Siemens <code>.pta</code>, GE <code>.rho</code>, Bruker shape files) vary, but the simple columnar text format above is the most common interchange format in MRI pulse design research.</p>
+            </div>
+        </details>
+    </div>
+
+    <!-- Status -->
+    <div id="status"></div>
+
+    <!-- Results -->
+    <div id="results">
+        <div class="card">
+            <h2>Results</h2>
+            <div class="result-summary">
+                <div class="stat">
+                    <div class="value" id="stat-orig"></div>
+                    <div class="label">Original duration</div>
+                </div>
+                <div class="stat">
+                    <div class="value" id="stat-verse"></div>
+                    <div class="label">VERSE duration</div>
+                </div>
+                <div class="stat">
+                    <div class="value" id="stat-comp"></div>
+                    <div class="label">Compression</div>
+                </div>
+            </div>
+            <div class="plot-container" id="plot-rf"></div>
+            <div class="plot-container" id="plot-grad"></div>
+            <div class="download-row">
+                <button class="btn btn-primary" id="downloadbtn">Download compressed pulse (.txt)</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="https://github.com/carefulCamel61097/verse-pulse-optimizer">GitHub repo</a> &middot;
+        Based on Hargreaves et al., <em>Magn Reson Med</em> 52:590-597 (2004)
+        &middot; <a href="https://doi.org/10.1002/mrm.20168">doi:10.1002/mrm.20168</a>
+    </footer>
+</div>
+
+<script>
+// =========================================================================
+// Pyodide loader
+// =========================================================================
+let pyodide = null;
+const statusEl = document.getElementById("status");
+
+function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = cls;
+}
+
+async function loadPyodideAndNumpy() {
+    setStatus("Loading Python runtime (first visit may take a few seconds)...", "status-loading");
+    const pyodideModule = await import("https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.mjs");
+    pyodide = await pyodideModule.loadPyodide();
+    await pyodide.loadPackage("numpy");
+    setStatus("Ready — upload a pulse or try the demo.", "status-ready");
+    document.getElementById("demobtn").disabled = false;
+}
+
+loadPyodideAndNumpy().catch(err => {
+    setStatus("Failed to load Python runtime: " + err.message, "status-error");
+    console.error(err);
+});
+
+// =========================================================================
+// VERSE algorithm (Python source executed via Pyodide)
+// =========================================================================
+const VERSE_PY = `
+import numpy as np
+import json
+
+def run_verse(B1_list, G_orig, dt, B1_max, G_max, S_max):
+    """Run VERSE optimization. Returns JSON string with results."""
+    B1 = np.array(B1_list, dtype=float)
+    N = len(B1)
+    epsilon = 1e-10
+
+    t_orig = np.arange(N) * dt
+    T_orig = N * dt
+
+    # Step 1: Pointwise tau_dot
+    tau_dot_rf = B1_max / np.maximum(np.abs(B1), epsilon)
+    tau_dot_grad = G_max / G_orig
+    tau_dot_pw = np.minimum(tau_dot_rf, tau_dot_grad)
+
+    # Step 2: Slew rate enforcement
+    tau_dot_start = S_max * dt / G_orig
+    tau_dot_fwd = np.zeros(N)
+    tau_dot_fwd[0] = tau_dot_start
+    for n in range(N - 1):
+        max_increase = S_max * dt / (G_orig * tau_dot_fwd[n])
+        tau_dot_fwd[n + 1] = min(float(tau_dot_pw[n + 1]),
+                                  tau_dot_fwd[n] + max_increase)
+
+    tau_dot_bwd = np.zeros(N)
+    tau_dot_bwd[-1] = tau_dot_start
+    for n in range(N - 2, -1, -1):
+        max_increase = S_max * dt / (G_orig * tau_dot_bwd[n + 1])
+        tau_dot_bwd[n] = min(float(tau_dot_pw[n]),
+                              tau_dot_bwd[n + 1] + max_increase)
+
+    tau_dot = np.minimum(tau_dot_fwd, tau_dot_bwd)
+
+    # Step 3: VERSE waveforms
+    B1_verse = B1 * tau_dot
+    G_verse = G_orig * tau_dot
+    dt_new = dt / tau_dot
+    t_new = np.concatenate([[0], np.cumsum(dt_new[:-1])])
+    T_new = t_new[-1] + dt_new[-1]
+
+    # Step 4: Resample to uniform grid
+    t_uniform = np.arange(0, T_new, dt)
+    N_final = len(t_uniform)
+    B1_final = np.interp(t_uniform, t_new, B1_verse)
+    G_final = np.interp(t_uniform, t_new, G_verse)
+
+    # Slew enforcement on uniform grid
+    max_dG = S_max * dt
+    G_slew_fwd = np.copy(G_final)
+    for n in range(N_final - 1):
+        if G_slew_fwd[n + 1] - G_slew_fwd[n] > max_dG:
+            G_slew_fwd[n + 1] = G_slew_fwd[n] + max_dG
+        elif G_slew_fwd[n + 1] - G_slew_fwd[n] < -max_dG:
+            G_slew_fwd[n + 1] = G_slew_fwd[n] - max_dG
+
+    G_slew_bwd = np.copy(G_slew_fwd)
+    for n in range(N_final - 2, -1, -1):
+        if G_slew_bwd[n] - G_slew_bwd[n + 1] > max_dG:
+            G_slew_bwd[n] = G_slew_bwd[n + 1] + max_dG
+        elif G_slew_bwd[n] - G_slew_bwd[n + 1] < -max_dG:
+            G_slew_bwd[n] = G_slew_bwd[n + 1] - max_dG
+
+    G_final = G_slew_bwd
+
+    ratio_verse = B1_verse / np.maximum(G_verse, epsilon)
+    ratio_uniform = np.interp(t_uniform, t_new, ratio_verse)
+    B1_final = ratio_uniform * G_final
+    B1_final = np.clip(B1_final, -B1_max, B1_max)
+
+    return json.dumps({
+        "t_orig_ms": (t_orig * 1e3).tolist(),
+        "B1_orig": B1.tolist(),
+        "G_orig_val": float(G_orig),
+        "T_orig_ms": float(T_orig * 1e3),
+        "t_verse_ms": (t_uniform * 1e3).tolist(),
+        "B1_verse": B1_final.tolist(),
+        "G_verse": G_final.tolist(),
+        "T_verse_ms": float(T_new * 1e3),
+        "compression": float(T_orig / T_new),
+        "t_uniform_us": (t_uniform * 1e6).tolist(),
+        "dt_us": float(dt * 1e6),
+    })
+
+
+def make_demo_sinc():
+    """Generate the default TB=10 sinc demo pulse. Returns JSON."""
+    GAMMA = 42.577e6
+    GAMMA_RAD = 2 * np.pi * 42.577
+    TB = 10
+    T_pulse = 2.9e-3
+    flip_angle = 60
+    slab_width = 40e-3
+    dt = 4e-6
+
+    G_orig = TB / (GAMMA * slab_width * T_pulse) * 1e3
+    N = int(np.round(T_pulse / dt))
+    if N % 2 == 0:
+        N += 1
+    t = np.arange(N) * dt
+    t_centered = t - t[-1] / 2
+    B1 = np.sinc(TB * t_centered / T_pulse)
+    B1 = B1 * np.hamming(N)
+    flip_rad = np.deg2rad(flip_angle)
+    B1 = B1 * flip_rad / (GAMMA_RAD * np.sum(B1) * dt)
+
+    return json.dumps({
+        "B1": B1.tolist(),
+        "G_orig": float(G_orig),
+        "dt": float(dt),
+    })
+`;
+
+// =========================================================================
+// UI Logic
+// =========================================================================
+const dropzone = document.getElementById("dropzone");
+const fileinput = document.getElementById("fileinput");
+const demobtn = document.getElementById("demobtn");
+const downloadbtn = document.getElementById("downloadbtn");
+const resultsDiv = document.getElementById("results");
+
+let lastResult = null; // store for download
+
+// Drag-and-drop
+dropzone.addEventListener("click", () => fileinput.click());
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileinput.addEventListener("change", () => {
+    if (fileinput.files.length) handleFile(fileinput.files[0]);
+});
+
+// Demo button
+demobtn.disabled = true;
+demobtn.addEventListener("click", runDemo);
+
+// Download button
+downloadbtn.addEventListener("click", downloadResult);
+
+function getLimits() {
+    return {
+        B1_max: parseFloat(document.getElementById("b1max").value),
+        G_max: parseFloat(document.getElementById("gmax").value),
+        S_max: parseFloat(document.getElementById("smax").value) * 1e3, // T/m/s -> mT/m/s
+    };
+}
+
+function parseUploadedFile(text) {
+    const lines = text.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l.length > 0 && !l.startsWith("#") && !l.startsWith("%"));
+
+    const data = lines.map(line => {
+        return line.split(/[\t ,]+/).map(Number);
+    }).filter(row => row.length > 0 && !row.some(isNaN));
+
+    if (data.length < 4) throw new Error("File has fewer than 4 data rows. Check the format.");
+
+    const ncols = data[0].length;
+    const dt = 4e-6; // default sample interval
+
+    if (ncols >= 3) {
+        // 3+ columns: time, B1, gradient
+        const B1 = data.map(r => r[1]);
+        const G_vals = data.map(r => r[2]);
+        const times = data.map(r => r[0]);
+        // Detect time unit: if max time < 1, assume seconds; if < 1000, ms; else us
+        const maxT = Math.max(...times);
+        let detectedDt;
+        if (maxT < 0.1) {
+            // seconds
+            detectedDt = (times[1] - times[0]);
+        } else if (maxT < 1000) {
+            // milliseconds
+            detectedDt = (times[1] - times[0]) * 1e-3;
+        } else {
+            // microseconds
+            detectedDt = (times[1] - times[0]) * 1e-6;
+        }
+        const G_orig = G_vals.reduce((a, b) => a + Math.abs(b), 0) / G_vals.length;
+        return { B1, G_orig, dt: detectedDt };
+    } else if (ncols === 2) {
+        // 2 columns: B1, gradient
+        const B1 = data.map(r => r[0]);
+        const G_vals = data.map(r => r[1]);
+        const G_orig = G_vals.reduce((a, b) => a + Math.abs(b), 0) / G_vals.length;
+        return { B1, G_orig, dt };
+    } else {
+        // 1 column: B1 only — need gradient from hardware limit context
+        const B1 = data.map(r => r[0]);
+        const G_orig = getLimits().G_max * 0.5; // reasonable default
+        return { B1, G_orig, dt };
+    }
+}
+
+async function handleFile(file) {
+    if (!pyodide) { setStatus("Python runtime still loading, please wait...", "status-loading"); return; }
+    setStatus("Reading file...", "status-loading");
+    try {
+        const text = await file.text();
+        const parsed = parseUploadedFile(text);
+        await runVerse(parsed.B1, parsed.G_orig, parsed.dt);
+    } catch (err) {
+        setStatus("Error: " + err.message, "status-error");
+        console.error(err);
+    }
+}
+
+async function runDemo() {
+    if (!pyodide) return;
+    setStatus("Generating demo pulse...", "status-loading");
+    try {
+        await pyodide.runPythonAsync(VERSE_PY);
+        const demoJson = await pyodide.runPythonAsync("make_demo_sinc()");
+        const demo = JSON.parse(demoJson);
+        await runVerse(demo.B1, demo.G_orig, demo.dt);
+    } catch (err) {
+        setStatus("Error: " + err.message, "status-error");
+        console.error(err);
+    }
+}
+
+async function runVerse(B1, G_orig, dt) {
+    setStatus("Running VERSE optimization...", "status-loading");
+    const limits = getLimits();
+    try {
+        await pyodide.runPythonAsync(VERSE_PY);
+
+        // Pass data to Python
+        pyodide.globals.set("_B1", pyodide.toPy(B1));
+        pyodide.globals.set("_G_orig", G_orig);
+        pyodide.globals.set("_dt", dt);
+        pyodide.globals.set("_B1_max", limits.B1_max);
+        pyodide.globals.set("_G_max", limits.G_max);
+        pyodide.globals.set("_S_max", limits.S_max);
+
+        const resultJson = await pyodide.runPythonAsync(
+            "run_verse(list(_B1), float(_G_orig), float(_dt), float(_B1_max), float(_G_max), float(_S_max))"
+        );
+        const result = JSON.parse(resultJson);
+        lastResult = result;
+        showResults(result, limits);
+        setStatus("Done!", "status-ready");
+    } catch (err) {
+        setStatus("VERSE failed: " + err.message, "status-error");
+        console.error(err);
+    }
+}
+
+function showResults(r, limits) {
+    resultsDiv.style.display = "block";
+
+    document.getElementById("stat-orig").textContent = r.T_orig_ms.toFixed(2) + " ms";
+    document.getElementById("stat-verse").textContent = r.T_verse_ms.toFixed(2) + " ms";
+    document.getElementById("stat-comp").textContent = r.compression.toFixed(1) + "x";
+
+    const plotLayout = {
+        margin: { t: 30, b: 40, l: 60, r: 20 },
+        legend: { orientation: "h", y: 1.12 },
+        font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" },
+    };
+
+    // RF plot
+    Plotly.newPlot("plot-rf", [
+        {
+            x: r.t_orig_ms, y: r.B1_orig, name: "Original",
+            line: { color: "#4361ee", width: 1.5 }, opacity: 0.6,
+        },
+        {
+            x: r.t_verse_ms, y: r.B1_verse, name: "VERSE",
+            line: { color: "#e63946", width: 1.5 },
+        },
+    ], {
+        ...plotLayout,
+        yaxis: { title: "B1 (μT)" },
+        xaxis: { title: "Time (ms)" },
+        shapes: [
+            { type: "line", x0: 0, x1: Math.max(r.t_orig_ms[r.t_orig_ms.length-1], r.t_verse_ms[r.t_verse_ms.length-1]),
+              y0: limits.B1_max, y1: limits.B1_max, line: { color: "#888", dash: "dot", width: 1 } },
+            { type: "line", x0: 0, x1: Math.max(r.t_orig_ms[r.t_orig_ms.length-1], r.t_verse_ms[r.t_verse_ms.length-1]),
+              y0: -limits.B1_max, y1: -limits.B1_max, line: { color: "#888", dash: "dot", width: 1 } },
+        ],
+    }, { responsive: true });
+
+    // Gradient plot
+    const G_orig_arr = new Array(r.t_orig_ms.length).fill(r.G_orig_val);
+    Plotly.newPlot("plot-grad", [
+        {
+            x: r.t_orig_ms, y: G_orig_arr, name: "Original",
+            line: { color: "#4361ee", width: 1.5 }, opacity: 0.6,
+        },
+        {
+            x: r.t_verse_ms, y: r.G_verse, name: "VERSE",
+            line: { color: "#e63946", width: 1.5 },
+        },
+    ], {
+        ...plotLayout,
+        yaxis: { title: "Gradient (mT/m)" },
+        xaxis: { title: "Time (ms)" },
+        shapes: [
+            { type: "line", x0: 0, x1: Math.max(r.t_orig_ms[r.t_orig_ms.length-1], r.t_verse_ms[r.t_verse_ms.length-1]),
+              y0: limits.G_max, y1: limits.G_max, line: { color: "#888", dash: "dot", width: 1 } },
+        ],
+    }, { responsive: true });
+
+    resultsDiv.scrollIntoView({ behavior: "smooth" });
+}
+
+function downloadResult() {
+    if (!lastResult) return;
+    const r = lastResult;
+    const lines = [
+        "# VERSE Pulse Output",
+        `# Original duration: ${r.T_orig_ms.toFixed(3)} ms  |  VERSE duration: ${r.T_verse_ms.toFixed(3)} ms  |  Compression: ${r.compression.toFixed(1)}x`,
+        `# Sample interval: ${r.dt_us.toFixed(1)} us  |  Samples: ${r.t_uniform_us.length}`,
+        "#",
+        "# time_us\tB1_uT\tG_mTm",
+    ];
+    for (let i = 0; i < r.t_uniform_us.length; i++) {
+        lines.push(`${r.t_uniform_us[i].toFixed(6)}\t${r.B1_verse[i].toFixed(6)}\t${r.G_verse[i].toFixed(6)}`);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "verse_pulse_output.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>

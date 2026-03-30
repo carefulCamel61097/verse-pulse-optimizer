@@ -1,6 +1,8 @@
-# VERSE Pulse Optimizer
+# VERSE Pulse Optimizer — Compress MRI RF Pulses to Minimum Duration
 
-A Python tool that takes any MRI RF pulse and compresses it to minimum duration using **Variable-Rate Selective Excitation (VERSE)**.
+A Python implementation of **Variable-Rate Selective Excitation (VERSE)** for MRI pulse design. Upload any RF pulse waveform and compress it to the shortest possible duration while respecting hardware limits (RF amplitude, gradient strength, slew rate). Based on the algorithm by Hargreaves et al. (2004).
+
+**[Try it in your browser](https://carefulCamel61097.github.io/verse-pulse-optimizer/)** — no install needed. Run the built-in example (the same TB=10 sinc shown below) to see VERSE in action, or upload your own pulse and download the compressed version.
 
 ## The principle
 
